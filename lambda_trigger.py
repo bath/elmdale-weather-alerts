@@ -1,5 +1,6 @@
 import os
 import json
+import time
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone
@@ -101,7 +102,7 @@ def base_recipients_and_sender():
     return sender, recipient_list
 
 
-def send_freeze_email(freeze_hours, min_temp, hours_ahead):
+def send_freeze_email(freeze_hours, min_temp, hours_ahead, threshold_f):
     sender, recipient_list = base_recipients_and_sender()
 
     first_freeze = freeze_hours[0]
@@ -110,19 +111,24 @@ def send_freeze_email(freeze_hours, min_temp, hours_ahead):
     start_time = format_time(first_freeze["dt"])
     end_time = format_time(last_freeze["dt"])
 
-    subject = "Freeze Alert: Turn ON Bathroom Heaters"
+    subject = "❄️ Cold Alert: Turn ON Bathroom Heaters"
 
     body_lines = [
-        "Freeze risk detected near the Elmdale bathroom.",
+        "❄️ ACTION REQUIRED: Turn ON bathroom heaters.",
         "",
-        f"Lowest forecast temperature (next {hours_ahead} hours): {min_temp:.1f} °F",
-        f"First hour at/below threshold: {start_time}",
-        f"Last hour at/below threshold:  {end_time}",
+        "🔍 What was checked:",
+        f"- Analyzed hourly forecast for the next {hours_ahead} hours",
+        f"- Freeze threshold: {threshold_f:.1f}°F",
+        f"- Found {len(freeze_hours)} hour(s) at or below threshold",
         "",
-        "Recommended action:",
-        "- Turn ON the electric heaters via the smart switches.",
+        "📊 Forecast details:",
+        f"- Lowest temperature: {min_temp:.1f}°F",
+        f"- Freeze period: {start_time} to {end_time}",
         "",
-        "This alert only fires when we transition into a 'cold' state.",
+        "💡 Why this action is required:",
+        f"- Temperatures are forecast to reach {min_temp:.1f}°F, which is at or below the {threshold_f:.1f}°F threshold",
+        "- This indicates freeze risk that could damage bathroom plumbing",
+        "- Heaters should be activated to prevent freezing",
     ]
 
     body_text = "\n".join(body_lines)
@@ -137,23 +143,28 @@ def send_freeze_email(freeze_hours, min_temp, hours_ahead):
     )
 
 
-def send_warm_ok_email(warm_clear_days, warm_threshold_f):
+def send_warm_ok_email(warm_clear_days, warm_threshold_f, hours_ahead, threshold_f):
     sender, recipient_list = base_recipients_and_sender()
 
-    subject = "Warm Spell: You Can Turn OFF Bathroom Heaters"
+    subject = "☀️ Warm Alert: Turn OFF Bathroom Heaters"
 
     body_lines = [
-        "Good news – conditions look warm enough to safely turn OFF the heaters,",
-        "based on your conservative rule.",
+        "☀️ ACTION REQUIRED: Turn OFF bathroom heaters.",
         "",
-        "Rule used:",
-        "- No freezing temps in the short-term forecast window.",
-        f"- Next {warm_clear_days} day(s) have overnight lows at or above {warm_threshold_f:.1f} °F.",
+        "🔍 What was checked:",
+        f"- Analyzed hourly forecast for the next {hours_ahead} hours for immediate freeze risk",
+        f"- Analyzed daily forecast for the next {warm_clear_days} day(s) for sustained warm conditions",
+        f"- Freeze threshold: {threshold_f:.1f}°F",
+        f"- Warm threshold: {warm_threshold_f:.1f}°F",
         "",
-        "Recommended action:",
-        "- Turn OFF the bathroom heaters via the smart switches.",
+        "✅ Check results:",
+        f"- No temperatures at or below {threshold_f:.1f}°F in the next {hours_ahead} hours",
+        f"- All {warm_clear_days} upcoming day(s) have minimum temperatures at or above {warm_threshold_f:.1f}°F",
         "",
-        "This alert only fires when we transition into a 'warm' state.",
+        "💡 Why this action is safe:",
+        "- No immediate freeze risk exists in the short-term forecast",
+        f"- Sustained warm conditions are forecast for the next {warm_clear_days} day(s)",
+        "- Heaters can be safely turned off to conserve energy",
     ]
 
     body_text = "\n".join(body_lines)
@@ -180,20 +191,22 @@ def send_status_email(
 ):
     sender, recipient_list = base_recipients_and_sender()
 
-    subject = "Status: Elmdale Freeze Monitor (FSM + 10-Day Forecast)"
+    subject = "🧪 Test Alert: Elmdale Weather Monitor Status"
 
     # Short-term hourly summary
     upcoming = hourly[:hours_ahead]
     short_term_line = "No hourly data available."
+    freeze_hours_count = 0
     if upcoming:
         temps = [h.get("temp") for h in upcoming if h.get("temp") is not None]
         if temps:
             short_min = min(temps)
             short_max = max(temps)
+            freeze_hours_count = len([t for t in temps if t <= threshold_f])
             short_term_line = (
                 f"Next {len(temps)} hourly points: "
                 f"min {short_min:.1f}°F, max {short_max:.1f}°F "
-                f"(threshold: {threshold_f:.1f}°F)."
+                f"(threshold: {threshold_f:.1f}°F)"
             )
 
     # Daily forecast summary (up to 10 days)
@@ -208,7 +221,7 @@ def send_status_email(
 
             tag = ""
             if min_t is not None and min_t <= threshold_f:
-                tag = " (⚠ below freeze threshold)"
+                tag = " (⚠️ below freeze threshold)"
             elif min_t is not None and min_t < warm_threshold_f:
                 tag = " (below warm-clear threshold)"
 
@@ -220,22 +233,26 @@ def send_status_email(
         day_lines.append("- (no daily forecast data available)")
 
     body_lines = [
-        "This is a TEST / STATUS email from your Elmdale freeze monitor.",
+        "🧪 TEST MODE: This is a status check email. No state changes were made.",
         "",
-        f"FSM last stored state:     {last_state or 'None (not set yet)'}",
-        f"FSM forecast-derived state: {current_state}",
+        "🔍 What was checked:",
+        f"- Hourly forecast analysis: next {hours_ahead} hours",
+        f"- Daily forecast analysis: next {warm_clear_days} day(s) for warm-clear determination",
+        f"- Freeze threshold: {threshold_f:.1f}°F",
+        f"- Warm threshold: {warm_threshold_f:.1f}°F",
         "",
-        "Short-term hourly window:",
+        "📊 Current system state:",
+        f"- Last stored state: {last_state or 'None (initial run)'}",
+        f"- Forecast-derived state: {current_state}",
+        "",
+        "📈 Short-term forecast results:",
         short_term_line,
+        f"- Hours at/below freeze threshold: {freeze_hours_count}",
         "",
-        "Warm-clear rule in effect:",
-        f"- warm_clear_days: {warm_clear_days}",
-        f"- warm_threshold_f: {warm_threshold_f:.1f}°F",
-        "",
-        "Daily forecast (up to next 10 days):",
+        "📅 Daily forecast (next 10 days):",
         *day_lines,
         "",
-        "Note: TEST mode does not change the stored FSM state.",
+        "ℹ️ Note: This is a test email. The stored state was not modified.",
     ]
 
     body_text = "\n".join(body_lines)
@@ -432,6 +449,79 @@ def lambda_handler(event, context):
                 "body": "TEST_SMS_ONLY: test SMS sent.",
             }
 
+        # ---------- TEST_COLD MODE ----------
+        if mode == "TEST_COLD":
+            # Simulate cold conditions: create mock weather data with freeze risk
+            now_ts = int(time.time())
+            mock_hourly = []
+            for i in range(hours_ahead):
+                # Create hours with temperatures below threshold
+                mock_hourly.append({
+                    "dt": now_ts + (i * 3600),
+                    "temp": threshold_f - 2.0 - (i * 0.5),  # Decreasing temps below threshold
+                })
+            
+            mock_daily = []
+            for i in range(warm_clear_days + 1):
+                # Create days with min temps below warm threshold
+                mock_daily.append({
+                    "dt": now_ts + (i * 86400),
+                    "temp": {
+                        "min": warm_threshold_f - 5.0,
+                        "max": warm_threshold_f + 10.0,
+                    }
+                })
+            
+            # Process with mock data
+            test_freeze_hours = find_freeze_hours(mock_hourly, hours_ahead, threshold_f)
+            test_min_temp = min(h["temp"] for h in test_freeze_hours) if test_freeze_hours else mock_hourly[0]["temp"]
+            
+            # Send cold alert email (but don't change state)
+            if test_freeze_hours:
+                send_freeze_email(test_freeze_hours, test_min_temp, hours_ahead, threshold_f)
+                start_time = format_time(test_freeze_hours[0]["dt"])
+                end_time = format_time(test_freeze_hours[-1]["dt"])
+            else:
+                send_freeze_email([mock_hourly[0]], test_min_temp, hours_ahead, threshold_f)
+                start_time = format_time(mock_hourly[0]["dt"])
+                end_time = start_time
+            
+            return {
+                "statusCode": 200,
+                "body": "TEST_COLD: cold alert email sent with simulated freeze conditions; FSM state unchanged.",
+            }
+
+        # ---------- TEST_WARM MODE ----------
+        if mode == "TEST_WARM":
+            # Simulate warm conditions: create mock weather data with no freeze risk
+            now_ts = int(time.time())
+            mock_hourly = []
+            for i in range(hours_ahead):
+                # Create hours with temperatures above threshold
+                mock_hourly.append({
+                    "dt": now_ts + (i * 3600),
+                    "temp": threshold_f + 10.0 + (i * 0.5),  # Increasing temps above threshold
+                })
+            
+            mock_daily = []
+            for i in range(warm_clear_days):
+                # Create days with min temps above warm threshold
+                mock_daily.append({
+                    "dt": now_ts + (i * 86400),
+                    "temp": {
+                        "min": warm_threshold_f + 5.0,
+                        "max": warm_threshold_f + 25.0,
+                    }
+                })
+            
+            # Send warm alert email (but don't change state)
+            send_warm_ok_email(warm_clear_days, warm_threshold_f, hours_ahead, threshold_f)
+            
+            return {
+                "statusCode": 200,
+                "body": "TEST_WARM: warm alert email sent with simulated warm conditions; FSM state unchanged.",
+            }
+
         # ---------- NORMAL MODE FSM LOGIC ----------
 
         if last_state is None:
@@ -445,12 +535,12 @@ def lambda_handler(event, context):
                         "temp": hourly[0]["temp"],
                     }
                     min_temp = fake_hour["temp"]
-                    send_freeze_email([fake_hour], min_temp, hours_ahead)
+                    send_freeze_email([fake_hour], min_temp, hours_ahead, threshold_f)
                     start_time = format_time(fake_hour["dt"])
                     end_time = start_time
                 else:
                     min_temp = min(h["temp"] for h in freeze_hours)
-                    send_freeze_email(freeze_hours, min_temp, hours_ahead)
+                    send_freeze_email(freeze_hours, min_temp, hours_ahead, threshold_f)
                     start_time = format_time(freeze_hours[0]["dt"])
                     end_time = format_time(freeze_hours[-1]["dt"])
 
@@ -458,7 +548,7 @@ def lambda_handler(event, context):
                 msg = "Initial state set to COLD and freeze-type alert sent."
 
             else:
-                send_warm_ok_email(warm_clear_days, warm_threshold_f)
+                send_warm_ok_email(warm_clear_days, warm_threshold_f, hours_ahead, threshold_f)
                 send_warm_ok_sms(warm_clear_days, warm_threshold_f)
                 msg = "Initial state set to WARM and warm-type alert sent."
 
@@ -483,12 +573,12 @@ def lambda_handler(event, context):
                     "temp": hourly[0]["temp"],
                 }
                 min_temp = fake_hour["temp"]
-                send_freeze_email([fake_hour], min_temp, hours_ahead)
+                send_freeze_email([fake_hour], min_temp, hours_ahead, threshold_f)
                 start_time = format_time(fake_hour["dt"])
                 end_time = start_time
             else:
                 min_temp = min(h["temp"] for h in freeze_hours)
-                send_freeze_email(freeze_hours, min_temp, hours_ahead)
+                send_freeze_email(freeze_hours, min_temp, hours_ahead, threshold_f)
                 start_time = format_time(freeze_hours[0]["dt"])
                 end_time = format_time(freeze_hours[-1]["dt"])
 
@@ -501,7 +591,7 @@ def lambda_handler(event, context):
 
         else:  # current_state == "WARM"
             # Transition COLD -> WARM
-            send_warm_ok_email(warm_clear_days, warm_threshold_f)
+            send_warm_ok_email(warm_clear_days, warm_threshold_f, hours_ahead, threshold_f)
             send_warm_ok_sms(warm_clear_days, warm_threshold_f)
             return {
                 "statusCode": 200,
