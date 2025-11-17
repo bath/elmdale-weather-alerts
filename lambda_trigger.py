@@ -89,7 +89,7 @@ def format_date(ts_utc):
     return ct.strftime("%Y-%m-%d")
 
 
-# ---------- Email helpers ----------
+# ---------- Email helpers (SES) ----------
 
 def base_recipients_and_sender():
     sender = os.environ["SES_SENDER"]
@@ -295,6 +295,20 @@ def send_warm_ok_sms(warm_clear_days, warm_threshold_f):
     )
 
 
+def send_test_sms():
+    topic_arn = get_sns_topic_arn()
+    if not topic_arn:
+        print("SNS_TOPIC_ARN not set; skipping TEST SMS.")
+        return
+
+    msg = "TEST SMS from Elmdale freeze monitor: SNS wiring is working."
+    sns.publish(
+        TopicArn=topic_arn,
+        Message=msg,
+        Subject="Elmdale Freeze Monitor TEST",
+    )
+
+
 # ---------- State persistence (DynamoDB) ----------
 
 def get_state_table():
@@ -334,7 +348,7 @@ def lambda_handler(event, context):
     threshold_f = float(os.environ.get("FREEZE_THRESHOLD_F", "32"))
 
     warm_clear_days = int(os.environ.get("WARM_CLEAR_DAYS", "2"))
-    warm_threshold_f = float(os.environ.get("WARM_THRESHOLD_F", "32"))
+    warm_threshold_f = float(os.environ.get("WARM_THRESHOLD_F", "35"))
 
     mode = "NORMAL"
     if isinstance(event, dict):
@@ -359,9 +373,16 @@ def lambda_handler(event, context):
                     warm_clear_days=warm_clear_days,
                     warm_threshold_f=warm_threshold_f,
                 )
+                send_test_sms()
                 return {
                     "statusCode": 200,
-                    "body": "TEST: sent status email with limited data.",
+                    "body": "TEST: sent status email + test SMS with limited data.",
+                }
+            elif mode == "TEST_SMS_ONLY":
+                send_test_sms()
+                return {
+                    "statusCode": 200,
+                    "body": "TEST_SMS_ONLY: test SMS sent (no hourly data).",
                 }
             return {"statusCode": 200, "body": "No hourly data."}
 
@@ -397,9 +418,18 @@ def lambda_handler(event, context):
                 warm_clear_days=warm_clear_days,
                 warm_threshold_f=warm_threshold_f,
             )
+            send_test_sms()
             return {
                 "statusCode": 200,
-                "body": "TEST: status email sent; FSM state unchanged.",
+                "body": "TEST: status email + test SMS sent; FSM state unchanged.",
+            }
+
+        # ---------- TEST_SMS_ONLY MODE ----------
+        if mode == "TEST_SMS_ONLY":
+            send_test_sms()
+            return {
+                "statusCode": 200,
+                "body": "TEST_SMS_ONLY: test SMS sent.",
             }
 
         # ---------- NORMAL MODE FSM LOGIC ----------
