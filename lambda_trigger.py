@@ -102,7 +102,7 @@ def base_recipients_and_sender():
     return sender, recipient_list
 
 
-def send_freeze_email(freeze_hours, min_temp, hours_ahead, threshold_f):
+def send_freeze_email(freeze_hours, min_temp, hours_ahead, threshold_f, is_test=False):
     sender, recipient_list = base_recipients_and_sender()
 
     first_freeze = freeze_hours[0]
@@ -111,7 +111,8 @@ def send_freeze_email(freeze_hours, min_temp, hours_ahead, threshold_f):
     start_time = format_time(first_freeze["dt"])
     end_time = format_time(last_freeze["dt"])
 
-    subject = "❄️ Cold Alert: Turn ON Bathroom Heaters"
+    test_prefix = "🧪 TEST: " if is_test else ""
+    subject = f"{test_prefix}❄️ Cold Alert: Turn ON Bathroom Heaters"
 
     body_lines = [
         "❄️ ACTION REQUIRED: Turn ON bathroom heaters.",
@@ -143,10 +144,11 @@ def send_freeze_email(freeze_hours, min_temp, hours_ahead, threshold_f):
     )
 
 
-def send_warm_ok_email(warm_clear_days, warm_threshold_f, hours_ahead, threshold_f):
+def send_warm_ok_email(warm_clear_days, warm_threshold_f, hours_ahead, threshold_f, is_test=False):
     sender, recipient_list = base_recipients_and_sender()
 
-    subject = "☀️ Warm Alert: Turn OFF Bathroom Heaters"
+    test_prefix = "🧪 TEST: " if is_test else ""
+    subject = f"{test_prefix}☀️ Warm Alert: Turn OFF Bathroom Heaters"
 
     body_lines = [
         "☀️ ACTION REQUIRED: Turn OFF bathroom heaters.",
@@ -478,11 +480,11 @@ def lambda_handler(event, context):
             
             # Send cold alert email (but don't change state)
             if test_freeze_hours:
-                send_freeze_email(test_freeze_hours, test_min_temp, hours_ahead, threshold_f)
+                send_freeze_email(test_freeze_hours, test_min_temp, hours_ahead, threshold_f, is_test=True)
                 start_time = format_time(test_freeze_hours[0]["dt"])
                 end_time = format_time(test_freeze_hours[-1]["dt"])
             else:
-                send_freeze_email([mock_hourly[0]], test_min_temp, hours_ahead, threshold_f)
+                send_freeze_email([mock_hourly[0]], test_min_temp, hours_ahead, threshold_f, is_test=True)
                 start_time = format_time(mock_hourly[0]["dt"])
                 end_time = start_time
             
@@ -515,7 +517,7 @@ def lambda_handler(event, context):
                 })
             
             # Send warm alert email (but don't change state)
-            send_warm_ok_email(warm_clear_days, warm_threshold_f, hours_ahead, threshold_f)
+            send_warm_ok_email(warm_clear_days, warm_threshold_f, hours_ahead, threshold_f, is_test=True)
             
             return {
                 "statusCode": 200,
